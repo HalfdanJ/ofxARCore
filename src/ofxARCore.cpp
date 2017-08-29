@@ -1,10 +1,23 @@
+// Copyright 2017 Google Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include "ofxARCore.h"
-#ifdef TARGET_ANDROID
 #include "ofxAndroidUtils.h"
 
+#ifdef TARGET_ANDROID
 
 ofxARCore::ofxARCore(){
-
     if(!ofGetJavaVMPtr()){
         ofLogNotice("ofxARCore") << "couldn't find java virtual machine";
         return;
@@ -15,6 +28,7 @@ ofxARCore::ofxARCore(){
         ofLogNotice("ofxARCore") << "failed to get environment using GetEnv()";
         return;
     }
+
     jclass localClass = env->FindClass("cc/ofxarcorelib/ofxARCoreLib");
     javaClass = (jclass) env->NewGlobalRef(localClass);
 
@@ -36,19 +50,63 @@ ofxARCore::ofxARCore(){
     }
 
     javaTango = (jobject)env->NewGlobalRef(javaTango);
+
+    ofAddListener(ofxAndroidEvents().pause,this,&ofxARCore::pauseApp);
+    ofAddListener(ofxAndroidEvents().resume,this,&ofxARCore::resumeApp);
 }
 
 ofxARCore::~ofxARCore(){
-//    toAnalyze.close();
+    ofRemoveListener(ofxAndroidEvents().pause,this,&ofxARCore::pauseApp);
+    ofRemoveListener(ofxAndroidEvents().resume,this,&ofxARCore::resumeApp);
 }
 
-//bool ofxARCore::setThreaded(bool _threaded){
-//    threaded = _threaded;
-//}
-
 void ofxARCore::setup(){
-    _textureInitialized = false;
-//    ofTextureData td;
+    _sessionInitialized = false;
+
+    // Request camera permissions
+    ofxAndroidRequestCameraPermission();
+    if(ofxAndroidCheckCameraPermission()) {
+        setupSession();
+    }
+
+    // Prepare texture mesh
+    quad.getVertices().resize(4);
+    quad.getTexCoords().resize(4);
+    quad.setMode(OF_PRIMITIVE_TRIANGLE_FAN);
+    quad.getVertices()[0] = {0, 0, 0};
+    quad.getVertices()[1] = {ofGetWidth(), 0, 0};
+    quad.getVertices()[2] = {ofGetWidth(), ofGetHeight(), 0};
+    quad.getVertices()[3] = {0, ofGetHeight(), 0};
+
+    quad.getTexCoords()[0] = {0, 0};
+    quad.getTexCoords()[1] = {1,0};
+    quad.getTexCoords()[2] = {1,1};
+    quad.getTexCoords()[3] = {0,1};
+}
+
+void ofxARCore::setupSession(){
+    ofLogVerbose("ofxARCore") << "Initializing ARCore";
+    GLuint texId = setupTexture();
+
+    if (!javaTango) {
+        ofLogError("ofxARCore") << "setup(): java ofxARCore not loaded";
+        return;
+    }
+
+    JNIEnv *env = ofGetJNIEnv();
+    jmethodID javaSetupMethod = env->GetMethodID(javaClass, "setup", "(III)V");
+    if (!javaSetupMethod) {
+        ofLogError("ofxARCore") << "setup(): couldn't get java setup for ofxARCore";
+        return;
+    }
+
+    env->CallVoidMethod(javaTango, javaSetupMethod, texId, ofGetWidth(), ofGetHeight());
+
+    _sessionInitialized = true;
+}
+
+GLuint ofxARCore::setupTexture(){
+
     GLuint texId[1];
     glGenTextures(1, texId);
 
@@ -75,39 +133,25 @@ void ofxARCore::setup(){
     texture.texData.tex_u = 1;
     texture.texData.textureTarget = GL_TEXTURE_EXTERNAL_OES;
     texture.texData.glInternalFormat = GL_RGBA;
+    return texId[0];
+}
 
 
-    ofxAndroidRequestCameraPermission();
-    if(ofxAndroidCheckCameraPermission()) {
-        ofLog() << "Initializing tango";
-        if (!javaTango) {
-            ofLogError("ofxARCore") << "setup(): java ofxARCore not loaded";
-            return;
+void ofxARCore::pauseApp(){
+    JNIEnv *env = ofGetJNIEnv();
+    env->CallVoidMethod(javaTango, env->GetMethodID(javaClass, "appPause", "()V"));
+}
+
+void ofxARCore::resumeApp(){
+    JNIEnv *env = ofGetJNIEnv();
+    env->CallVoidMethod(javaTango, env->GetMethodID(javaClass, "appResume", "()V"));
+
+    // Check if permissions have been granted, and the session isn't setup yet
+    if(!_sessionInitialized){
+        if(ofxAndroidCheckCameraPermission()) {
+            setupSession();
         }
-
-        JNIEnv *env = ofGetJNIEnv();
-        jmethodID javaSetupMethod = env->GetMethodID(javaClass, "setup", "(I)V");
-        if (!javaSetupMethod) {
-            ofLogError("ofxARCore") << "setup(): couldn't get java setup for ofxARCore";
-            return;
-        }
-
-        env->CallVoidMethod(javaTango, javaSetupMethod, texId[0]);
     }
-
-    // Setup drawing mesh
-    quad.getVertices().resize(4);
-    quad.getTexCoords().resize(4);
-    quad.setMode(OF_PRIMITIVE_TRIANGLE_FAN);
-    quad.getVertices()[0] = {0, 0, 0};
-    quad.getVertices()[1] = {ofGetWidth(), 0, 0};
-    quad.getVertices()[2] = {ofGetWidth(), ofGetHeight(), 0};
-    quad.getVertices()[3] = {0, ofGetHeight(), 0};
-
-    quad.getTexCoords()[0] = {0, 0};
-    quad.getTexCoords()[1] = {1,0};
-    quad.getTexCoords()[2] = {1,1};
-    quad.getTexCoords()[3] = {0,1};
 }
 
 void ofxARCore::update(){
@@ -115,9 +159,12 @@ void ofxARCore::update(){
     jmethodID method = env->GetMethodID(javaClass, "update", "()V");
     env->CallVoidMethod(javaTango, method);
 
-    if(isInitialized() && !_textureInitialized){
-        _textureInitialized = true;
-        JNIEnv *env = ofGetJNIEnv();
+
+    // Check if textureUVs are marked dirty
+    bool textureUvDirty =  env->CallBooleanMethod(javaTango,
+                                               env->GetMethodID(javaClass, "textureUvDirty", "()Z"));
+
+    if(textureUvDirty){
         jmethodID method = env->GetMethodID(javaClass, "getTextureUv", "()[F");
         jfloatArray data = (jfloatArray) env->CallObjectMethod(javaTango, method);
 
@@ -133,19 +180,15 @@ void ofxARCore::update(){
 }
 
 bool ofxARCore::isInitialized(){
-    if(!javaTango){
-        ofLogError("ofxARCore") << "isInitialized(): java ofxARCore not loaded";
-        return false;
-    }
-
     JNIEnv *env = ofGetJNIEnv();
-    jmethodID javaSetupMethod = env->GetMethodID(javaClass,"isInitialized","()Z");
-    if(!javaSetupMethod){
-        ofLogError("ofxARCore") << "isInitialized(): couldn't get java for ofxARCore";
-        return false;
-    }
+    jmethodID method = env->GetMethodID(javaClass,"isInitialized","()Z");
+    return env->CallBooleanMethod(javaTango, method);
+}
 
-    return env->CallBooleanMethod(javaTango,javaSetupMethod);
+bool ofxARCore::isTracking(){
+    JNIEnv *env = ofGetJNIEnv();
+    jmethodID method = env->GetMethodID(javaClass,"isTracking","()Z");
+    return env->CallBooleanMethod(javaTango, method);
 }
 
 ofMatrix4x4 ofxARCore::getViewMatrix(){
@@ -160,10 +203,11 @@ ofMatrix4x4 ofxARCore::getViewMatrix(){
     return m;
 }
 
-ofMatrix4x4 ofxARCore::getProjectionMatrix(){
+ofMatrix4x4 ofxARCore::getProjectionMatrix(float near, float far){
     JNIEnv *env = ofGetJNIEnv();
-    jfloatArray data = (jfloatArray) env->CallObjectMethod(javaTango,env->GetMethodID(javaClass,"getProjectionMatrix","()[F"));
-
+    jfloatArray data = (jfloatArray) env->CallObjectMethod(javaTango,
+                                                           env->GetMethodID(javaClass,"getProjectionMatrix","(FF)[F"),
+                                                           near, far);
     jboolean isCopy;
     jfloat *body =  env->GetFloatArrayElements(data, &isCopy);
     ofMatrix4x4 m;
@@ -176,87 +220,24 @@ void ofxARCore::draw(){
     quad.draw();
     texture.unbind();
 }
-//
-//void ofxAndroidMobileVision::setTrackProminentFaceOnly(bool prominentOnly){
-//    if(!javaMobileVision) return;
-//    JNIEnv *env = ofGetJNIEnv();
-//    env->CallVoidMethod(javaMobileVision,env->GetMethodID(javaClass,"setProminentFaceOnly","(Z)V"), prominentOnly);
-//}
-//
-//void ofxAndroidMobileVision::setMinFaceSize(float minFaceSize){
-//    if(!javaMobileVision) return;
-//    JNIEnv *env = ofGetJNIEnv();
-//    env->CallVoidMethod(javaMobileVision,env->GetMethodID(javaClass,"setMinFaceSize","(F)V"), minFaceSize);
-//}
-//
-//void ofxAndroidMobileVision::update(ofPixels &pixels){
-//    if(threaded) {
-//        if (toAnalyze.empty()) {
-//            ToAnalyzeData d = ToAnalyzeData();
-//            d.pixels = pixels;
-//            toAnalyze.send(d);
-//        }
-//    } else {
-//        process(pixels);
-//    }
-//
-//    fromAnalyze.tryReceive(faces);
-//
-//}
-//
-//vector<ofxAndroidMobileVisionFace> & ofxAndroidMobileVision::getFaces(){
-//    return faces;
-//}
-//
-//void ofxAndroidMobileVision::process(ofPixels &pixels){
-//    if(!javaMobileVision){
-//        ofLogError("ofxAndroidMobileVision") << "update(): java not loaded";
-//        return;
-//    }
-//
-//    JNIEnv *env = ofGetJNIEnv();
-//    jmethodID javaMethod = env->GetMethodID(javaClass,"update","([BII)I");
-//    if(!javaMethod ){
-//        ofLogError("ofxAndroidMobileVision") << "update(): couldn't get java update for MobileVision";
-//        return;
-//    }
-//
-//    jbyteArray arr = env->NewByteArray(pixels.size());
-//    env->SetByteArrayRegion( arr, 0, pixels.size(), (const signed char*) pixels.getData());
-//    int numFaces = env->CallIntMethod(javaMobileVision, javaMethod, arr, pixels.getWidth(), pixels.getHeight());
-//    env->DeleteLocalRef(arr);
-//
-//    vector<ofxAndroidMobileVisionFace> analyzedfaces;
-//    for(int i=0;i<numFaces;i++) {
-//        // Get data
-//        auto method = env->GetMethodID(javaClass, "getData", "(I)[F");
-//        jfloatArray data = (jfloatArray) env->CallObjectMethod(javaMobileVision, method, 0);
-//
-//        jboolean isCopy;
-//        jfloat *body =  env->GetFloatArrayElements(data, &isCopy);
-//
-//        ofxAndroidMobileVisionFace face;
-//        face.smileProbability = body[0];
-//        face.leftEyeOpenProbability = body[1];
-//        face.rightEyeOpenProbability = body[2];
-//        for(int j=0;j<12;j++){
-//            ofVec2f p;
-//            p.x = body[j*2+3];
-//            p.y = body[j*2+4];
-//            face.landmarks.push_back(p);
-//        }
-//        analyzedfaces.push_back(face);
-//
-//        env->DeleteLocalRef(data);
-//    }
-//
-//    fromAnalyze.send(analyzedfaces);
-//}
-//
-//void ofxAndroidMobileVision::threadedFunction(){
-//    ToAnalyzeData d;
-//    while(toAnalyze.receive(d)){
-//        process(d.pixels);
-//    }
-//}
+
+void ofxARCore::addAnchor(){
+    JNIEnv *env = ofGetJNIEnv();
+    jmethodID method = env->GetMethodID(javaClass, "addAnchor", "()V");
+    env->CallVoidMethod(javaTango, method);
+}
+
+ofMatrix4x4 ofxARCore::getAnchor(int i){
+    JNIEnv *env = ofGetJNIEnv();
+    jfloatArray data = (jfloatArray) env->CallObjectMethod(javaTango,
+                                                           env->GetMethodID(javaClass,"getAnchorPoseMatrix","(I)[F"),
+                                                           i);
+    jboolean isCopy;
+    jfloat *body =  env->GetFloatArrayElements(data, &isCopy);
+    ofMatrix4x4 m;
+    m.set(body);
+    return m;
+}
+
+
 #endif

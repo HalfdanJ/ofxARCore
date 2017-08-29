@@ -37,3 +37,5 @@ assets
 
 .DS_Store
 .idea/
+
+*.iml
