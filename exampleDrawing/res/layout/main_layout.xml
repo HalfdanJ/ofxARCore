@@ -21,8 +21,7 @@
         android:layout_marginTop="16dp"
         android:background="@android:color/transparent"
         android:onClick="clear"
-        android:src="@android:drawable/ic_menu_revert"
-        app:srcCompat="@android:drawable/ic_menu_revert" />
+        android:src="@android:drawable/ic_menu_revert"/>
 
     <!-- add here other views' layouts -->
     </RelativeLayout>
