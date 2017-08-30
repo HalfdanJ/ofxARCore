@@ -9,7 +9,7 @@ This openFrameworks addon implements some of the basic features from the ARCore 
 This is not an official Google product.
 
 ## Developer guide
-To use the addon, you need the latest openFrameworks from git (0.10.0) and Android Studio. Follow the [Android Studio guide](https://github.com/openframeworks/openFrameworks/blob/master/docs/android_studio.md) to learn how to get started with openFrameworks and Android. 
+To use the addon, you need the latest openFrameworks from [github](https://github.com/openframeworks/openFrameworks/) and Android Studio. Follow the [Android Studio guide](https://github.com/openframeworks/openFrameworks/blob/master/docs/android_studio.md) to learn how to get started with openFrameworks and Android. 
 
 To add the addon, add `ofxARCore` to `addons.make` in your project, or through the project generator. Additionally you will need to add the following two lines to the end of `settings.gradle` of your project:
 
