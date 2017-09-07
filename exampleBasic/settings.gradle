@@ -1,4 +1,3 @@
-include ':ofxTango'
 // openFrameworks-relative root directories (don't touch)
 
 def ofRoot = '../../../'
