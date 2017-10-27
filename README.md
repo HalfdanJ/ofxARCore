@@ -27,7 +27,9 @@ Shows how to use the addon in the most basic way, just rendering a grid centered
 ### [Drawing example](exampleDrawing/)
 A simple demo that lets you draw in the air. 
 
-The app calculates the world coordinates from touch events on the screen, and draws a continuous white line through the air. Read more on [AR Experiments site](https://experiments.withgoogle.com/ar).
+The app calculates the world coordinates from touch events on the screen, and draws a continuous white line through the air. Read more on [AR Experiments site](https://experiments.withgoogle.com/ar). 
+
+There is also a never version ported to Java available here: [github.com/googlecreativelab/ar-drawing-java](https://github.com/googlecreativelab/ar-drawing-java)
 
 
 
