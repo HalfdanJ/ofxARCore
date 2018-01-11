@@ -63,9 +63,9 @@ ofxARCore::~ofxARCore(){
 void ofxARCore::setup(){
     _sessionInitialized = false;
 
-    ofxAndroidRequestPermission(CAMERA);
     // Request camera permissions
-    if(ofxAndroidCheckPermission(CAMERA)) {
+    ofxAndroidRequestCameraPermission();
+    if(ofxAndroidCheckCameraPermission()) {
         setupSession();
     }
 
@@ -148,7 +148,7 @@ void ofxARCore::resumeApp(){
 
     // Check if permissions have been granted, and the session isn't setup yet
     if(!_sessionInitialized){
-        if(ofxAndroidCheckPermission(CAMERA)) {
+        if(ofxAndroidCheckCameraPermission()) {
             setupSession();
         }
     }
