@@ -63,9 +63,10 @@ ofxARCore::~ofxARCore(){
 void ofxARCore::setup(){
     _sessionInitialized = false;
 
-    ofxAndroidRequestPermission(CAMERA);
+
+    ofxAndroidRequestPermission(OFX_ANDROID_PERMISSION_CAMERA);
     // Request camera permissions
-    if(ofxAndroidCheckPermission(CAMERA)) {
+    if(ofxAndroidCheckPermission(OFX_ANDROID_PERMISSION_CAMERA)) {
         setupSession();
     }
 
