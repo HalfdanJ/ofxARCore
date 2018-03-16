@@ -16,7 +16,7 @@ package cc.ofxarcorelib;
 
 import android.app.Activity;
 import android.content.Context;
-import android.util.Log;
+import android.view.Surface;
 import android.widget.Toast;
 
 import com.google.ar.core.Anchor;
@@ -24,6 +24,7 @@ import com.google.ar.core.Config;
 import com.google.ar.core.Frame;
 import com.google.ar.core.Pose;
 import com.google.ar.core.Session;
+import com.google.ar.core.TrackingState;
 import com.google.ar.core.exceptions.NotTrackingException;
 
 import cc.openframeworks.OFAndroid;
@@ -51,7 +52,7 @@ public class ofxARCoreLib extends OFAndroidObject {
 	private float[] mProjectionMatrix = new float[16];
 	private float[] mAnchorMatrix = new float[16];
 
-	private Frame.TrackingState mTrackingState = Frame.TrackingState.NOT_TRACKING;
+	private TrackingState mTrackingState = TrackingState.STOPPED;
 
 	private Pose mPose;
 	private ArrayList<Anchor> mAnchors = new ArrayList<>();
@@ -69,15 +70,15 @@ public class ofxARCoreLib extends OFAndroidObject {
 				mSession = new Session((Activity) context);
 
 				// Create default config, check is supported, create session from that config.
-				mDefaultConfig = Config.createDefaultConfig();
+				mDefaultConfig =  new Config(mSession);
 				if (!mSession.isSupported(mDefaultConfig)) {
 					Toast.makeText(context, "This device does not support AR", Toast.LENGTH_LONG).show();
 					return;
 				}
-				mSession.resume(mDefaultConfig);
+				mSession.configure(mDefaultConfig);
 
 				mSession.setCameraTextureName(mTexId);
-				mSession.setDisplayGeometry(width, height);
+				mSession.setDisplayGeometry(Surface.ROTATION_0, width, height);
 
 				// Allocate UV coordinate buffers
 				ByteBuffer bbTexCoords = ByteBuffer.allocateDirect(4  * 2 * 4);
@@ -89,6 +90,9 @@ public class ofxARCoreLib extends OFAndroidObject {
 				ByteBuffer bbTexCoordsTransformed = ByteBuffer.allocateDirect(4  * 2 * 4);
 				bbTexCoordsTransformed.order(ByteOrder.nativeOrder());
 				mTextureUVTransformed = bbTexCoordsTransformed.asFloatBuffer();
+
+				mSession.resume();
+
 			}
 		});
 	}
@@ -98,7 +102,7 @@ public class ofxARCoreLib extends OFAndroidObject {
 	}
 
 	public boolean isTracking(){
-		return mTrackingState == Frame.TrackingState.TRACKING;
+		return mTrackingState == TrackingState.TRACKING;
 	}
 
 	public float[] getViewMatrix(){
@@ -106,7 +110,7 @@ public class ofxARCoreLib extends OFAndroidObject {
 	}
 
 	public float[] getProjectionMatrix(float near, float far){
-		if(mIsReady) mSession.getProjectionMatrix(mProjectionMatrix, 0, near, far);
+		if(mIsReady) mSession.update().getCamera().getProjectionMatrix(mProjectionMatrix, 0, near, far);
 		return mProjectionMatrix;
 	}
 
@@ -120,7 +124,7 @@ public class ofxARCoreLib extends OFAndroidObject {
 	public void addAnchor(){
 		if(!mIsReady) return;
 		try {
-			Anchor a = mSession.addAnchor(mPose);
+			Anchor a = mSession.createAnchor(mPose);
 			mAnchors.add(a);
 		} catch (NotTrackingException e) {
 			e.printStackTrace();
@@ -147,20 +151,20 @@ public class ofxARCoreLib extends OFAndroidObject {
 		Frame frame = null;
 		try {
 			frame = mSession.update();
-			if (frame.isDisplayRotationChanged()) {
+			if (frame.hasDisplayGeometryChanged()) {
 				mTextureUVTransformed.position(0);
 				frame.transformDisplayUvCoords(mTextureUV, mTextureUVTransformed);
 				mTextureUVDirty = true;
 			}
 
 			// If not tracking, return
-			mTrackingState = frame.getTrackingState();
-			if (mTrackingState == Frame.TrackingState.NOT_TRACKING) {
+			mTrackingState = frame.getCamera().getTrackingState();
+			if (mTrackingState != TrackingState.TRACKING) {
 				return;
 			}
 
-			mPose = frame.getPose();
-			frame.getViewMatrix(mViewMatrix, 0);
+			mPose = frame.getCamera().getPose();
+			frame.getCamera().getViewMatrix(mViewMatrix, 0);
 
 			mIsReady = true;
 
@@ -191,10 +195,11 @@ public class ofxARCoreLib extends OFAndroidObject {
 	@Override
 	protected void appResume() {
 		if(mSession != null)
-			mSession.resume(mDefaultConfig);
+			mSession.resume();
 	}
 
 	@Override
 	protected void appStop() {
+
 	}
 }

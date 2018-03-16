@@ -16,7 +16,9 @@
 #include "ofConstants.h"
 #include "ofThread.h"
 #include "ofThreadChannel.h"
-
+#include "ofLog.h"
+#include "ofMesh.h"
+#include "ofEventUtils.h"
 #ifdef TARGET_ANDROID
 
 #include <jni.h>

@@ -11,9 +11,6 @@ javaDependencies( ofRoot ).each { dep ->
 }
 
 addonJavaDependencies( ofRoot ).each { dep ->
-    println dep
     include(dep[1])
     project(dep[1]).projectDir = new File(dep[0])
 }
-include ':arcore_client'
-project(':arcore_client').projectDir = new File(ofRoot + 'addons/ofxARCore/ofxARCoreLib/arcore_client')
