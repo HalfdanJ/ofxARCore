@@ -26,29 +26,59 @@
 #include "ofMatrix4x4.h"
 #include "ofTexture.h"
 
+typedef struct ofAugmentedImage {
+	ofMatrix4x4 matrix;
+	float width;
+	float height;
+	int index;
+	bool is_tracking;
+	std::string name;
+} ofAugmentedImage;
+
+typedef struct ofHitPose {
+	ofMatrix4x4 matrix;
+	float distance;
+} ofHitPose;
+
+typedef struct ofARPlane {
+	ofMesh mesh;
+    ofPath path;
+	ofMatrix4x4 center;
+} ofARPlane;
 
 class ofxARCore : ofThread{
+
 public:
 
-	ofxARCore();
+    ofxARCore();
     ~ofxARCore();
 
-    void setup();
+    void setup(bool enableAugmentedImages);
 
     bool isInitialized();
 	bool isTracking();
+
+    // boehm-e
+	float getCameraFOV();
+    float getDpi();
 
     void update();
     void draw();
 
     void pauseApp();
     void resumeApp();
+	void reloadTexture();
 
     void addAnchor();
     ofMatrix4x4 getAnchor(int i=0);
 
     ofMatrix4x4 getViewMatrix();
+	std::vector<ofAugmentedImage*> getImageMatrices();
+	std::vector<ofARPlane *> getPlanes();
+	ofHitPose *getHitPose(int x, int y);
     ofMatrix4x4 getProjectionMatrix(float near=0.1f, float far=100.0f);
+
+    std::vector<float> getPointCloud();     /* get point cloud arcore */
 
     ofTexture texture;
 
@@ -59,8 +89,10 @@ private:
     ofMesh quad;
     jclass javaClass;
     jobject javaTango;
+    ofDirectory *arcoreImagesDir;
 
     bool _sessionInitialized;
+	bool enableAugmentedImages;
 };
 
 #endif

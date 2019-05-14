@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <types/ofPoint.h>
+#include <graphics/ofPath.h>
 #include "ofxARCore.h"
 #include "ofxAndroidUtils.h"
 
@@ -60,9 +62,13 @@ ofxARCore::~ofxARCore(){
     ofRemoveListener(ofxAndroidEvents().resume,this,&ofxARCore::resumeApp);
 }
 
-void ofxARCore::setup(){
+void ofxARCore::setup(bool enableAugmentedImages){
     _sessionInitialized = false;
+    this->enableAugmentedImages = enableAugmentedImages;
 
+
+    std::string path = "AugmentedImageDatabase";
+    arcoreImagesDir = new ofDirectory(path);
 
     ofxAndroidRequestPermission(OFX_ANDROID_PERMISSION_CAMERA);
     // Request camera permissions
@@ -95,13 +101,13 @@ void ofxARCore::setupSession(){
     }
 
     JNIEnv *env = ofGetJNIEnv();
-    jmethodID javaSetupMethod = env->GetMethodID(javaClass, "setup", "(III)V");
+    jmethodID javaSetupMethod = env->GetMethodID(javaClass, "setup", "(IIII)V");
     if (!javaSetupMethod) {
         ofLogError("ofxARCore") << "setup(): couldn't get java setup for ofxARCore";
         return;
     }
 
-    env->CallVoidMethod(javaTango, javaSetupMethod, texId, ofGetWidth(), ofGetHeight());
+    env->CallVoidMethod(javaTango, javaSetupMethod, texId, ofGetWidth(), ofGetHeight(), this->enableAugmentedImages);
 
     _sessionInitialized = true;
 }
@@ -137,6 +143,16 @@ GLuint ofxARCore::setupTexture(){
     return texId[0];
 }
 
+void ofxARCore::reloadTexture() {
+    GLuint texId = setupTexture();
+    JNIEnv *env = ofGetJNIEnv();
+    jmethodID javaSetupMethod = env->GetMethodID(javaClass, "setup2", "(I)V");
+    if (!javaSetupMethod) {
+        ofLogError("ofxARCore") << "setup(): couldn't get java setup for ofxARCore";
+        return;
+    }
+    env->CallVoidMethod(javaTango, javaSetupMethod, texId);
+}
 
 void ofxARCore::pauseApp(){
     JNIEnv *env = ofGetJNIEnv();
@@ -144,6 +160,10 @@ void ofxARCore::pauseApp(){
 }
 
 void ofxARCore::resumeApp(){
+
+    setupSession();
+    reloadTexture();
+
     JNIEnv *env = ofGetJNIEnv();
     env->CallVoidMethod(javaTango, env->GetMethodID(javaClass, "appResume", "()V"));
 
@@ -163,7 +183,7 @@ void ofxARCore::update(){
 
     // Check if textureUVs are marked dirty
     bool textureUvDirty =  env->CallBooleanMethod(javaTango,
-                                               env->GetMethodID(javaClass, "textureUvDirty", "()Z"));
+                                                  env->GetMethodID(javaClass, "textureUvDirty", "()Z"));
 
     if(textureUvDirty){
         jmethodID method = env->GetMethodID(javaClass, "getTextureUv", "()[F");
@@ -186,6 +206,49 @@ bool ofxARCore::isInitialized(){
     return env->CallBooleanMethod(javaTango, method);
 }
 
+float ofxARCore::getCameraFOV() {
+
+    JNIEnv *env = ofGetJNIEnv();
+    jmethodID javaGetFovMethod = env->GetMethodID(javaClass,"getFOV","()F");
+    if(!javaGetFovMethod){
+        ofLogError("javaGetFovMethod") << "javaGetFovMethod(): couldn't get java";
+        return false;
+    }
+    jfloat fov = env->CallFloatMethod (javaTango, javaGetFovMethod);
+    ofLog() << "FOVVV " << fov;
+
+    return fov;
+}
+
+/* point cloud and plane */
+std::vector<float> ofxARCore::getPointCloud() {
+    JNIEnv *env = ofGetJNIEnv();
+    jfloatArray data = (jfloatArray) env->CallObjectMethod(javaTango,
+                                                           env->GetMethodID(javaClass,"getPointCloud","()[F"));
+
+    jsize size = env->GetArrayLength(data);
+    std::vector<float> result;
+    result.resize((int)size);
+    env->GetFloatArrayRegion(data, 0, size, (jfloat*)&result[0]);
+    return result;
+}
+
+
+float ofxARCore::getDpi() {
+
+    JNIEnv *env = ofGetJNIEnv();
+    jmethodID javaGetDpiMethod = env->GetMethodID(javaClass,"getDPI","()F");
+    if(!javaGetDpiMethod){
+        ofLogError("javaGetDpiMethod ") << "javaGetDpiMethod (): couldn't get java";
+        return false;
+    }
+    jfloat dpi = env->CallFloatMethod (javaTango, javaGetDpiMethod);
+    ofLog() << "DPI " << dpi;
+
+    return dpi;
+
+}
+
 bool ofxARCore::isTracking(){
     JNIEnv *env = ofGetJNIEnv();
     jmethodID method = env->GetMethodID(javaClass,"isTracking","()Z");
@@ -202,6 +265,108 @@ ofMatrix4x4 ofxARCore::getViewMatrix(){
     ofMatrix4x4 m;
     m.set(body);
     return m;
+}
+
+
+// boehm-e | hit pose of
+ofHitPose *ofxARCore::getHitPose(int x, int y) {
+    JNIEnv *env = ofGetJNIEnv();
+    jfloatArray data = (jfloatArray) env->CallObjectMethod(javaTango,
+                                                           env->GetMethodID(javaClass,"hitTest","(II)[F"),
+                                                           x, y);
+    jboolean isCopy;
+    jfloat *body =  env->GetFloatArrayElements(data, &isCopy);
+
+
+    int hit_ok = body[17];
+    bool has_hit = hit_ok == 1;
+
+    if (has_hit == false) {
+        return NULL;
+    }
+    ofMatrix4x4 m;
+    m.set(body);
+    ofHitPose *pose = new ofHitPose{m, body[16]};
+    return pose;
+}
+
+
+// boehm-e | augmented images of
+std::vector<ofAugmentedImage*> ofxARCore::getImageMatrices(){
+
+    std::vector<ofAugmentedImage*> matrices;
+
+    JNIEnv *env = ofGetJNIEnv();
+    jobjectArray objArray = (jobjectArray) env->CallObjectMethod(javaTango, env->GetMethodID(javaClass, "getImageMatrices", "()[[F"));
+
+    int arraySize = env->GetArrayLength(objArray);
+    for (int i=0; i < arraySize; i++)
+    {
+        jboolean isCopy;
+        jobject array = env->GetObjectArrayElement(objArray, i);
+
+        jfloat *body =  env->GetFloatArrayElements((jfloatArray)array, &isCopy);
+        ofMatrix4x4 m;
+        m.set(body);
+
+        int index = body[18];
+
+        std::string name = ofSplitString(arcoreImagesDir->getSorted().getPath(index), "/")[1];
+
+        int is_tracking = body[19];
+        bool tracking = is_tracking == 1;
+        matrices.push_back(new ofAugmentedImage{m, body[16], body[17], index, tracking, name});
+
+    }
+    return matrices;
+}
+
+
+// boehm-e | augmented images of
+std::vector<ofARPlane *> ofxARCore::getPlanes(){
+
+    std::vector<ofARPlane*> planes;
+
+    JNIEnv *env = ofGetJNIEnv();
+    jobjectArray objArray = (jobjectArray) env->CallObjectMethod(javaTango, env->GetMethodID(javaClass, "getPlanes", "()[[F"));
+
+    int arraySize = env->GetArrayLength(objArray);
+    for (int i=0; i < arraySize; i++)
+    {
+        jboolean isCopy;
+        jobject array = env->GetObjectArrayElement(objArray, i);
+
+        jfloat *body =  env->GetFloatArrayElements((jfloatArray)array, &isCopy);
+        ofMatrix4x4 m;
+        m.set(body);
+
+        ofMesh mesh;
+        ofPath path;
+
+        ofLog() << "DEBUG CPP PLANE " << env->GetArrayLength((jfloatArray )array) << std::endl;
+        for (int i=16; i<env->GetArrayLength((jfloatArray )array); i+=3) {
+//            if (i==16) {
+//                path.moveTo(body[i], body[i+1]);
+//            } else {
+//                path.lineTo(body[i], body[i+1]);
+//            }
+            mesh.addVertex(ofPoint(body[i], body[i+1], body[i+2]));
+//            mesh.addVertex(ofPoint(body[i+2], 0.0, body[i+3]));
+//            mesh.addVertex(m.getTranslation());
+//            mesh.addIndex(i-16);
+//            mesh.addIndex(i-15);
+//            mesh.addIndex(i-14);
+        }
+        for (int j=0; j<mesh.getVertices().size()-3; j++) {
+            mesh.addIndex(j);
+            mesh.addIndex(j+1);
+            mesh.addIndex(j+2);
+        }
+
+        planes.push_back(new ofARPlane{mesh, path,  m});
+
+    }
+    return planes;
 }
 
 ofMatrix4x4 ofxARCore::getProjectionMatrix(float near, float far){
@@ -239,6 +404,8 @@ ofMatrix4x4 ofxARCore::getAnchor(int i){
     m.set(body);
     return m;
 }
+
+
 
 
 #endif
